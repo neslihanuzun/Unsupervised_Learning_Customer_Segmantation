@@ -1,0 +1,232 @@
+#!pip install lifetimes
+#pip install yellowbrick
+import datetime as dt
+import pandas as pd
+import matplotlib.pyplot as plt
+from lifetimes import BetaGeoFitter
+from lifetimes import GammaGammaFitter
+from lifetimes.plotting import plot_period_transactions
+import numpy as np
+import pandas as pd
+import random
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import MinMaxScaler
+from yellowbrick.cluster import KElbowVisualizer
+from scipy.cluster.hierarchy import linkage
+from scipy.cluster.hierarchy import dendrogram
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder, StandardScaler, RobustScaler
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', 500)
+pd.set_option('display.float_format', lambda x: '%.4f' % x)
+from sklearn.preprocessing import MinMaxScaler
+
+df_ = pd.read_csv("flo_data_20K.csv")
+df = df_.copy()
+
+def check_df(df, head=5):
+    print("##################### Shape #####################")
+    print(df.shape)
+    print("##################### Types #####################")
+    print(df.dtypes)
+    print("##################### Head #####################")
+    print(df.head(head))
+    print("##################### Tail #####################")
+    print(df.tail(head))
+    print("##################### NA #####################")
+    print(df.isnull().sum())
+    print("##################### Quantiles #####################")
+    print(df.describe([0, 0.05, 0.50, 0.95, 0.99, 1]).T)
+    print("##################### Info #####################")
+    print(df.info())
+
+
+check_df(df)
+
+def grab_col_names(dataframe, cat_th=10, car_th=20):
+ 
+    # cat_cols, cat_but_car
+    cat_cols = [col for col in dataframe.columns if dataframe[col].dtypes == "O"]
+    num_but_cat = [col for col in dataframe.columns if dataframe[col].nunique() < cat_th and dataframe[col].dtypes != "O"]
+    cat_but_car = [col for col in dataframe.columns if dataframe[col].nunique() > car_th and dataframe[col].dtypes == "O"]
+    cat_cols = cat_cols + num_but_cat
+    cat_cols = [col for col in cat_cols if col not in cat_but_car]
+
+    # num_cols
+    num_cols = [col for col in dataframe.columns if dataframe[col].dtypes != "O"]
+    num_cols = [col for col in num_cols if col not in num_but_cat]
+
+    print(f"Observations: {dataframe.shape[0]}")
+    print(f"Variables: {dataframe.shape[1]}")
+    print(f'cat_cols: {len(cat_cols)}')
+    print(f'num_cols: {len(num_cols)}')
+    print(f'cat_but_car: {len(cat_but_car)}')
+    print(f'num_but_cat: {len(num_but_cat)}')
+
+    return cat_cols, num_cols, cat_but_car
+
+
+cat_cols, num_cols, cat_but_car = grab_col_names(df)
+
+cat_cols
+
+num_cols
+
+cat_but_car
+
+# Label Encoding & One Hot Encoding
+
+binary_cols = [col for col in df.columns if df[col].dtypes == "O" and df[col].nunique() == 2]
+binary_cols
+
+
+def label_encoder(df, binary_col):
+    labelencoder = LabelEncoder()
+    df[binary_col] = labelencoder.fit_transform(df[binary_col])
+    return df
+
+for col in binary_cols:
+    df = label_encoder(df, col)
+
+df.head()
+
+def one_hot_encoder(df, categorical_cols, drop_first=False):
+    df = pd.get_dummies(df, columns=categorical_cols, drop_first=drop_first)
+    return df
+
+df = one_hot_encoder(df, cat_cols, drop_first=True)
+df.head()
+
+
+#  Scaler Step
+
+sc = MinMaxScaler((0, 1))
+df = sc.fit_transform(df[num_cols])
+df[0:5]
+
+
+kmeans = KMeans(n_clusters=4, random_state=17).fit(df)
+kmeans.get_params()
+kmeans.n_clusters
+kmeans.cluster_centers_
+kmeans.labels_
+kmeans.inertia_
+
+
+kmeans = KMeans()
+ssd = []
+K = range(1, 30)
+
+for k in K:
+    kmeans = KMeans(n_clusters=k).fit(df)
+    ssd.append(kmeans.inertia_)
+plt.plot(K, ssd, "bx-")
+plt.xlabel("SSE/SSR/SSD with different K")
+plt.title("Optimum Küme sayısı için Elbow Yöntemi")
+plt.show()
+
+kmeans = KMeans()
+elbow = KElbowVisualizer(kmeans, k=(2, 20))
+elbow.fit(df)
+elbow.show()
+
+elbow.elbow_value_
+#6
+
+################################
+# Final Cluster
+################################
+
+kmeans = KMeans(n_clusters=elbow.elbow_value_).fit(df)
+
+kmeans.n_clusters
+kmeans.cluster_centers_
+kmeans.labels_
+df[0:6]
+
+clusters_kmeans = kmeans.labels_
+
+df = df_.copy()
+
+df["cluster"] = clusters_kmeans
+
+df.head()
+
+df["cluster"] = df["cluster"] + 1
+
+df[df["cluster"]==6]
+
+df.groupby("cluster").agg(["count","mean","median"]).T
+
+df.to_csv("clusters.csv")
+
+
+
+################################
+# Hierarchical Clustering
+################################
+
+df = df_.copy()
+
+sc = MinMaxScaler((0, 1))
+df = sc.fit_transform(df[num_cols])
+df[0:5]
+
+hc_average = linkage(df, "average")
+
+plt.figure(figsize=(10, 5))
+plt.title("Hierarchical Clustering Dendogram")
+plt.xlabel("Observation Units")
+plt.ylabel("Distance")
+dendrogram(hc_average,
+           leaf_font_size=10)
+plt.show()
+
+
+plt.figure(figsize=(7, 5))
+plt.title("Hierarchical Clustering Dendogram")
+plt.xlabel("Observation Units")
+plt.ylabel("Distance")
+dendrogram(hc_average,
+           truncate_mode="lastp",
+           p=10,
+           show_contracted=True,
+           leaf_font_size=10)
+plt.show()
+
+################################
+# Cluster Size
+################################
+
+plt.figure(figsize=(7, 5))
+plt.title("Dendrograms")
+dend = dendrogram(hc_average)
+plt.axhline(y=0.5, color='r', linestyle='--')
+plt.axhline(y=0.6, color='b', linestyle='--')
+plt.show()
+
+################################
+# Final Model
+################################
+
+from sklearn.cluster import AgglomerativeClustering
+cluster = AgglomerativeClustering(n_clusters=6, linkage="average")
+
+clusters = cluster.fit_predict(df)
+df = pd.read_csv("flo_data_20K.csv", index_col=0)
+df["hi_cluster_no"] = clusters
+
+df["hi_cluster_no"] = df["hi_cluster_no"] + 1
+
+df["kmeans_cluster_no"] = clusters_kmeans
+df["kmeans_cluster_no"] = df["kmeans_cluster_no"]  + 1
+
+df[["hi_cluster_no","kmeans_cluster_no"]]
+
+df.groupby(["hi_cluster_no","kmeans_cluster_no"]).agg(["count","mean","median"]).T
+
+
+
